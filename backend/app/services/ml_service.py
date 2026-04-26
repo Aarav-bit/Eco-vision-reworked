@@ -118,22 +118,16 @@ MODEL_PATH = os.path.join(
 # ──────────────────────────────────────────────────────────────────────────────
 def _apply_keras_compat_patch() -> None:
     """
-    Keras 3.13 introduced `quantization_config` in Dense/layer configs.
-    Keras 3.12.x (the latest version installable on Python 3.10) raises
-    an UnrecognizedKeyword error when it encounters that field.
-
-    We monkey-patch Dense.from_config to strip any unknown kwargs before
-    calling the real constructor, making the load forward-compatible.
+    Keras 3.x introduced extra kwargs in layer configs.
+    Patch Dense.from_config to silently drop unknown kwargs for forward compat.
     """
     try:
-        import keras  # standalone keras 3.12.x
         from keras.src.layers.core.dense import Dense
 
         _orig_from_config = Dense.from_config.__func__  # type: ignore[attr-defined]
 
         @classmethod  # type: ignore[misc]
-        def _patched_from_config(cls, config: dict):  # type: ignore[override]
-            # Strip kwargs Dense doesn't know about yet
+        def _patched_from_config(cls, config: dict):
             safe = {
                 k: v for k, v in config.items()
                 if k not in ("quantization_config",)
@@ -143,7 +137,6 @@ def _apply_keras_compat_patch() -> None:
         Dense.from_config = _patched_from_config  # type: ignore[method-assign]
         logger.debug("Keras compat patch applied to Dense.from_config")
     except Exception as exc:
-        # If keras isn't installed standalone, or patch fails, log and continue.
         logger.debug("Keras compat patch skipped: %s", exc)
 
 
