@@ -1,5 +1,4 @@
 # EcoVision Backend Dependencies
-# Install with: pip install -r requirements.txt
 
 # ── Web framework ──────────────────────────────────────────────────────────
 fastapi==0.115.0
@@ -11,9 +10,10 @@ starlette==0.41.0
 pymongo==4.8.0
 
 # ── ML / Data ─────────────────────────────────────────────────────────────
-# tensorflow-cpu is lighter than full tensorflow — no GPU deps.
-# 2.16.1 is the latest cpu-only build available on PyPI for Python 3.11.
-tensorflow-cpu==2.16.1
+# keras standalone + jax[cpu] backend — ~150MB vs TensorFlow's 600MB.
+# Fits Render free tier. keras 3.x can load .keras model files natively.
+keras==3.3.3
+jax[cpu]==0.4.28
 pillow>=10.0.0
 numpy>=1.26.0,<2.0.0
 

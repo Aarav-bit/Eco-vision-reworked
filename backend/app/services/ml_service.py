@@ -152,12 +152,13 @@ def load_model() -> Any:
     if _model is not None:
         return _model
 
+    # Set JAX as the keras backend (lightweight, no TF needed)
     import os as _os
-    _os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")  # suppress TF C++ logs
+    _os.environ.setdefault("KERAS_BACKEND", "jax")
 
     _apply_keras_compat_patch()
 
-    import tensorflow as tf  # noqa: PLC0415
+    import keras  # noqa: PLC0415
 
     if not os.path.isfile(MODEL_PATH):
         raise FileNotFoundError(
@@ -166,7 +167,7 @@ def load_model() -> Any:
         )
 
     logger.info("Loading model from: %s", MODEL_PATH)
-    _model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    _model = keras.models.load_model(MODEL_PATH, compile=False)
     logger.info(
         "✅ Model loaded — input: %s  output: %s",
         _model.input_shape,
