@@ -1,5 +1,4 @@
 import os
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from typing import List
@@ -14,7 +13,12 @@ from app.utils.db import get_database
 
 POSTS_COLLECTION = "posts"
 USERS_COLLECTION = "users"
-POST_IMAGES_DIR = os.path.join(tempfile.gettempdir(), "ecovision_posts")
+
+# Bug fix: Use the persistent uploads directory served by StaticFiles,
+# not tempfile.gettempdir() which is wiped by the OS and not URL-accessible.
+POST_IMAGES_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "uploads")
+)
 
 
 def _ensure_post_images_dir() -> None:
@@ -31,7 +35,9 @@ def _save_uploaded_image(upload: UploadFile, prefix: str) -> str:
     with open(target_path, "wb") as image_file:
         image_file.write(upload.file.read())
 
-    return target_path
+    # Bug fix: Return a URL path instead of an absolute filesystem path
+    # so the frontend can use it directly as an image src.
+    return f"/uploads/{file_name}"
 
 
 def create_post(
@@ -80,6 +86,8 @@ def create_post(
         waste_type=waste_type,
         recycled=recycled,
         timestamp=timestamp,
+        likes=[],
+        like_count=0,
     )
 
 
@@ -89,6 +97,7 @@ def get_all_posts() -> List[PostResponse]:
 
     posts: List[PostResponse] = []
     for record in posts_collection.find().sort("timestamp", -1):
+        likes = record.get("likes", [])
         posts.append(
             PostResponse(
                 id=str(record["_id"]),
@@ -98,7 +107,91 @@ def get_all_posts() -> List[PostResponse]:
                 waste_type=record["waste_type"],
                 recycled=record["recycled"],
                 timestamp=record["timestamp"],
+                likes=likes,
+                like_count=len(likes),
             )
         )
 
     return posts
+
+
+def get_posts_by_user(user_id: str) -> List[PostResponse]:
+    """Return all posts created by a specific user."""
+    db = get_database()
+    posts_collection = db[POSTS_COLLECTION]
+
+    posts: List[PostResponse] = []
+    for record in posts_collection.find({"user_id": user_id}).sort("timestamp", -1):
+        likes = record.get("likes", [])
+        posts.append(
+            PostResponse(
+                id=str(record["_id"]),
+                user_id=record["user_id"],
+                before_image_path=record["before_image_path"],
+                after_image_path=record["after_image_path"],
+                waste_type=record["waste_type"],
+                recycled=record["recycled"],
+                timestamp=record["timestamp"],
+                likes=likes,
+                like_count=len(likes),
+            )
+        )
+
+    return posts
+
+
+def toggle_like_post(post_id: str, user_id: str) -> PostResponse:
+    """Toggle like on a post. Adds user_id if not liked, removes if already liked."""
+    db = get_database()
+    posts_collection = db[POSTS_COLLECTION]
+
+    try:
+        object_id = ObjectId(post_id)
+    except (InvalidId, TypeError) as exc:
+        raise ValueError("Invalid post id.") from exc
+
+    record = posts_collection.find_one({"_id": object_id})
+    if not record:
+        raise ValueError("Post not found.")
+
+    likes: List[str] = record.get("likes", [])
+    if user_id in likes:
+        # Unlike
+        posts_collection.update_one({"_id": object_id}, {"$pull": {"likes": user_id}})
+        likes.remove(user_id)
+    else:
+        # Like
+        posts_collection.update_one({"_id": object_id}, {"$addToSet": {"likes": user_id}})
+        likes.append(user_id)
+
+    return PostResponse(
+        id=str(record["_id"]),
+        user_id=record["user_id"],
+        before_image_path=record["before_image_path"],
+        after_image_path=record["after_image_path"],
+        waste_type=record["waste_type"],
+        recycled=record["recycled"],
+        timestamp=record["timestamp"],
+        likes=likes,
+        like_count=len(likes),
+    )
+
+
+def delete_own_post(post_id: str, user_id: str) -> dict:
+    """Delete a post only if it belongs to the requesting user."""
+    db = get_database()
+    posts_collection = db[POSTS_COLLECTION]
+
+    try:
+        object_id = ObjectId(post_id)
+    except (InvalidId, TypeError) as exc:
+        raise ValueError("Invalid post id.") from exc
+
+    record = posts_collection.find_one({"_id": object_id})
+    if not record:
+        raise ValueError("Post not found.")
+    if record["user_id"] != user_id:
+        raise PermissionError("You can only delete your own posts.")
+
+    posts_collection.delete_one({"_id": object_id})
+    return {"message": "Post deleted successfully."}

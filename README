@@ -115,4 +115,36 @@ EcoVision Project 🚀
 
 ---
 
-## ⭐ If you like this project, give it a s
+## ✨ New Features Added
+
+| # | Feature | Description | Files Changed |
+|---|---------|-------------|---------------|
+| 1 | **Post Likes (Like/Unlike)** | Users can like or unlike any post. Likes are persisted in MongoDB, shown in real-time with optimistic UI updates. | `backend/app/models/post.py`, `post_service.py`, `routes/post.py`, `frontend/components/post-card.tsx`, `lib/api.ts` |
+| 2 | **Search & Filter Explore Feed** | The Explore page now has a live search bar (filter by waste type or username) and a dropdown to filter by Recycled / Disposed / All. | `frontend/app/dashboard/explore/page.tsx` |
+| 3 | **My Posts Page** | Dedicated page showing only the logged-in user's own posts, with a quick link to create a new post. | `backend/app/services/post_service.py`, `routes/post.py` (`GET /posts/mine`), `frontend/app/dashboard/my-posts/page.tsx` |
+| 4 | **Leaderboard** | Ranks all users by eco points. Shows a top-3 podium, per-user CO₂ saved and post count, and highlights the current user's position. | `backend/app/services/user_service.py`, `routes/user.py` (`GET /user/leaderboard`), `frontend/app/dashboard/leaderboard/page.tsx` |
+
+| 5 | **User Profile Page** | View and edit your display name. Shows a live stats summary (points, CO₂, posts). Name change updates the sidebar instantly via auth context. | `backend/app/services/user_service.py` (`get_user_profile`, `update_user_profile`), `routes/user.py` (`GET/PATCH /user/profile`), `frontend/app/dashboard/profile/page.tsx` |
+| 6 | **Delete Own Post** | Users can delete their own posts from the My Posts page with a confirmation dialog. Backend enforces ownership — you can only delete posts you created. | `backend/app/services/post_service.py` (`delete_own_post`), `routes/post.py` (`DELETE /posts/{id}`), `frontend/app/dashboard/my-posts/page.tsx` |
+| 7 | **Prediction History** | Every AI scan is saved to localStorage (last 20). The History page shows the image preview, waste type, confidence score, recyclability, and timestamp. Includes a clear-all action. | `frontend/lib/api.ts` (`savePredictionToHistory`, `getPredictionHistory`, `clearPredictionHistory`), `frontend/app/dashboard/history/page.tsx` |
+| 8 | **Live Stats on Dashboard** | The home dashboard now fetches and displays real-time posts, points, and CO₂ saved in a stats strip inside the welcome banner instead of static placeholder cards. | `frontend/app/dashboard/page.tsx` |
+
+---
+
+## ⭐ If you like this project, give it a star!
+
+---
+
+## 🐛 Bugs Fixed
+
+| # | File | Bug | Fix |
+|---|------|-----|-----|
+| 1 | `backend/app/services/post_service.py` | Post images were saved to `tempfile.gettempdir()` (OS temp dir, wiped on reboot) and stored as absolute filesystem paths — making them inaccessible via URL | Changed save directory to the persistent `backend/uploads/` folder served by FastAPI `StaticFiles`; return `/uploads/<filename>` URL path instead of absolute path |
+| 2 | `backend/app/services/auth_service.py` | `name` field was not included in the JWT token payload or the login/signup response — users always appeared nameless after login | Added `name` to both the JWT payload and the `AuthResponse` return dict in `signup_user()` and `login_user()` |
+| 3 | `backend/app/models/user.py` | `AuthResponse` Pydantic model was missing the `name` field — backend would silently drop it even if the service returned it | Added `name: str = ""` to `AuthResponse` |
+| 4 | `frontend/lib/api.ts` — `login()` | User `name` was derived from `email.split("@")[0]` instead of the actual name stored in the database | Updated to use `raw.name` from the backend response (with email fallback) |
+| 5 | `frontend/lib/api.ts` — `createPost()` | Return type was typed as `{ message: string; post_id: string }` but the backend actually returns a full `PostResponse` object | Fixed return type to `PostResponse` |
+| 6 | `frontend/lib/api.ts` — `getPosts()` | Image paths (`/uploads/...`) were used as-is, causing broken images since they are relative paths that need the API base URL | Prepend `API_BASE_URL` to relative image paths so `<img src>` resolves correctly |
+| 7 | `frontend/components/post-card.tsx` | `likes` state was initialized with `Math.random()` causing a React SSR/client hydration mismatch | Replaced with a stable seed derived from `post.id` set inside `useEffect` (client-only) |
+| 8 | `frontend/components/image-upload.tsx` | Preview image was not cleared when the parent component reset the `value` prop to `null` (e.g. after form submit), leaving a stale preview visible | Added a `useEffect` that watches the `value` prop and clears `preview` state when `value` becomes falsy |
+

@@ -1,0 +1,242 @@
+================================================================
+  EcoVision AI — CHANGELOG
+  All bug fixes, new features, and UI improvements
+================================================================
+
+----------------------------------------------------------------
+  BUG FIXES
+----------------------------------------------------------------
+
+1. Post images saved to OS temp dir (post_service.py)
+   - PROBLEM : Images were saved to tempfile.gettempdir() which
+               gets wiped by the OS on reboot. Paths stored in
+               MongoDB were absolute filesystem paths, so the
+               frontend could never load them as <img src>.
+   - FIX     : Changed save directory to the persistent
+               backend/uploads/ folder served by FastAPI
+               StaticFiles. Now returns /uploads/<filename>
+               URL path instead of an absolute path.
+   - FILES   : backend/app/services/post_service.py
+
+2. User name missing from login response (auth_service.py)
+   - PROBLEM : The name field was never included in the JWT
+               payload or the login/signup API response. Every
+               user appeared nameless after logging in.
+   - FIX     : Added name to both the JWT payload and the
+               AuthResponse return dict in signup_user() and
+               login_user().
+   - FILES   : backend/app/services/auth_service.py
+
+3. AuthResponse model missing name field (models/user.py)
+   - PROBLEM : The AuthResponse Pydantic model had no name
+               field, so the backend silently dropped it even
+               when the service returned it.
+   - FIX     : Added name: str = "" to AuthResponse.
+   - FILES   : backend/app/models/user.py
+
+4. Login derived name from email instead of DB (api.ts)
+   - PROBLEM : Frontend login() split the email on "@" to fake
+               a display name (e.g. "john" from john@mail.com).
+   - FIX     : Updated to use raw.name from the backend
+               response, with email fallback only if empty.
+   - FILES   : frontend/lib/api.ts
+
+5. createPost() had wrong return type (api.ts)
+   - PROBLEM : Return type was typed as { message, post_id }
+               but the backend actually returns a full
+               PostResponse object, causing silent type errors.
+   - FIX     : Fixed return type to PostResponse.
+   - FILES   : frontend/lib/api.ts
+
+6. Post images not loading in frontend (api.ts)
+   - PROBLEM : Relative /uploads/... paths were used as-is in
+               <img src>, which resolves to localhost:3000
+               instead of the API server at port 8000.
+   - FIX     : Prepend API_BASE_URL to all relative image paths
+               in getPosts(), getMyPosts(), and likePost().
+   - FILES   : frontend/lib/api.ts
+
+7. React SSR hydration mismatch in PostCard (post-card.tsx)
+   - PROBLEM : likes state was initialised with Math.random()
+               causing a mismatch between server-rendered HTML
+               and client hydration, producing React warnings.
+   - FIX     : Replaced with a stable seed derived from post.id
+               set inside useEffect (client-only). Later fully
+               replaced with real like counts from the API.
+   - FILES   : frontend/components/post-card.tsx
+
+8. Stale image preview after form reset (image-upload.tsx)
+   - PROBLEM : The preview image was not cleared when the parent
+               component reset the value prop to null (e.g.
+               after form submission), leaving a stale preview.
+   - FIX     : Added a useEffect that watches the value prop
+               and clears preview state when value is falsy.
+   - FILES   : frontend/components/image-upload.tsx
+
+
+----------------------------------------------------------------
+  NEW FEATURES
+----------------------------------------------------------------
+
+1. Post Likes (Like / Unlike)
+   - Users can like or unlike any post.
+   - Likes are persisted in MongoDB as an array of user IDs
+     on each post document.
+   - UI updates optimistically and reverts on API failure.
+   - Heart button shows filled/red state when liked.
+   - BACKEND : POST /posts/{post_id}/like (toggle)
+               likes[] and like_count fields added to
+               PostInDB and PostResponse models.
+   - FRONTEND: likePost() in api.ts, updated PostCard,
+               updated Post type with likes + like_count.
+   - FILES   : backend/app/models/post.py
+               backend/app/services/post_service.py
+               backend/app/routes/post.py
+               frontend/lib/api.ts
+               frontend/components/post-card.tsx
+
+2. Search & Filter on Explore Feed
+   - Live search bar filters posts by waste type or username.
+   - Dropdown filter: All Posts / Recycled / Disposed.
+   - All filtering is client-side (instant, no extra requests).
+   - FILES   : frontend/app/dashboard/explore/page.tsx
+
+3. My Posts Page (/dashboard/my-posts)
+   - Dedicated page showing only the logged-in user's posts.
+   - Inline delete button per post with confirmation dialog.
+   - Quick "New Post" shortcut when list is empty.
+   - BACKEND : GET /posts/mine
+               DELETE /posts/{post_id} (owner-only, returns
+               403 if another user tries to delete)
+   - FILES   : backend/app/services/post_service.py
+               backend/app/routes/post.py
+               frontend/app/dashboard/my-posts/page.tsx
+               frontend/lib/api.ts (getMyPosts, deleteOwnPost)
+
+4. Leaderboard (/dashboard/leaderboard)
+   - Ranks all non-admin users by eco points.
+   - Top-3 podium with gold/silver/bronze styling.
+   - Full ranked list with CO2 saved, post count per user.
+   - Highlights the current user's own row.
+   - BACKEND : GET /user/leaderboard?limit=10
+   - FILES   : backend/app/services/user_service.py
+               backend/app/routes/user.py
+               frontend/app/dashboard/leaderboard/page.tsx
+               frontend/lib/api.ts (getLeaderboard)
+
+5. User Profile Page (/dashboard/profile)
+   - View display name, email, and a live stats summary.
+   - Inline name editing — click the pencil icon, type, press
+     Enter or click the check. Saves via PATCH /user/profile.
+   - Name change updates the sidebar instantly via auth context
+     without requiring a page reload or re-login.
+   - BACKEND : GET  /user/profile
+               PATCH /user/profile  (body: { name })
+   - FILES   : backend/app/services/user_service.py
+               backend/app/routes/user.py
+               frontend/app/dashboard/profile/page.tsx
+               frontend/lib/api.ts (getUserProfile,
+                                    updateUserProfile)
+
+6. Prediction History (/dashboard/history)
+   - Every AI scan is automatically saved to localStorage
+     (capped at 20 entries, oldest dropped first).
+   - History page shows: image thumbnail, waste type,
+     confidence % (color-coded green/amber/red), recyclability
+     badge, disposal instructions, and timestamp.
+   - Clear-all button with confirmation dialog.
+   - Fully client-side — no backend required.
+   - FILES   : frontend/lib/api.ts
+               (savePredictionToHistory, getPredictionHistory,
+                clearPredictionHistory, PredictionHistoryEntry)
+               frontend/app/dashboard/history/page.tsx
+               frontend/app/dashboard/predict/page.tsx
+               (auto-saves after each successful prediction)
+
+7. Live Stats on Dashboard Home
+   - The welcome banner now fetches and displays real-time
+     stats: posts count, eco points, and CO2 saved.
+   - Shows skeleton loaders while fetching.
+   - Silently fails if the API is unreachable (non-critical).
+   - FILES   : frontend/app/dashboard/page.tsx
+
+
+----------------------------------------------------------------
+  UI IMPROVEMENTS
+----------------------------------------------------------------
+
+Consistent hover effects applied across all cards and pages:
+
+  Cards (general)
+  - hover:-translate-y-1.5   lift on hover
+  - hover:shadow-xl          deep shadow
+  - hover:border-primary/20  subtle border glow
+  - transition-all duration-300
+
+  Quick Action cards (dashboard)
+  - Colored glow shadow matching each card's icon color
+    (blue / green / amber / cyan)
+  - Icon scales up (group-hover:scale-110) on card hover
+  - Arrow icon slides right (group-hover:translate-x-1.5)
+  - Entire card is a <Link> — no nested button needed
+
+  Post cards
+  - Images zoom slightly on hover (group-hover:scale-105)
+  - Avatar gets a primary ring on hover
+  - Like button: red tinted background + filled heart when liked
+  - Comment input supports Enter key to submit
+
+  Leaderboard rows
+  - Non-current-user rows slide right (hover:translate-x-1)
+    instead of lifting — more natural for a list layout
+
+  Stats mini-cells (dashboard banner + stats page)
+  - hover:scale-[1.03] with background tint
+
+  Profile stat cards
+  - Each has its own colored glow shadow (amber/green/blue)
+  - Icon container scales up on hover
+
+  Admin post cards
+  - Images zoom on hover
+  - Delete button gets a destructive shadow glow
+
+  History cards
+  - Thumbnail zooms on hover
+  - Confidence score scales up on hover
+
+  All improvements use Tailwind utility classes only —
+  no external animation libraries added.
+
+
+----------------------------------------------------------------
+  FILES CHANGED (SUMMARY)
+----------------------------------------------------------------
+
+Backend
+  backend/app/models/post.py
+  backend/app/models/user.py
+  backend/app/services/auth_service.py
+  backend/app/services/post_service.py
+  backend/app/services/user_service.py
+  backend/app/routes/post.py
+  backend/app/routes/user.py
+
+Frontend
+  frontend/lib/api.ts
+  frontend/lib/auth-context.tsx  (unchanged — already correct)
+  frontend/components/post-card.tsx
+  frontend/components/image-upload.tsx
+  frontend/components/app-sidebar.tsx
+  frontend/app/dashboard/page.tsx
+  frontend/app/dashboard/predict/page.tsx
+  frontend/app/dashboard/explore/page.tsx
+  frontend/app/dashboard/stats/page.tsx
+  frontend/app/dashboard/leaderboard/page.tsx   (NEW)
+  frontend/app/dashboard/my-posts/page.tsx      (NEW)
+  frontend/app/dashboard/history/page.tsx       (NEW)
+  frontend/app/dashboard/profile/page.tsx       (NEW)
+  frontend/app/admin/dashboard/page.tsx
+  frontend/app/admin/posts/page.tsx
+
+================================================================

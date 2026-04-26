@@ -17,11 +17,16 @@ app = FastAPI(
 )
 
 # -----------------------------
-# CORS CONFIGURATION (IMPORTANT)
+# CORS CONFIGURATION
 # -----------------------------
+# Read allowed origins from env so the Vercel URL can be injected at deploy time.
+# Falls back to wildcard for local development.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # allow all origins for development
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,10 +35,12 @@ app.add_middleware(
 # -----------------------------
 # STATIC FILES (FOR IMAGE ACCESS)
 # -----------------------------
-# Ensure uploads directory exists before mounting, otherwise StaticFiles will
-# raise a RuntimeError at startup when the directory is missing.
-UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
-UPLOADS_DIR = os.path.normpath(UPLOADS_DIR)
+# On Render free tier the filesystem is ephemeral, but we still mount /uploads
+# so local dev and any persistent-disk setup works unchanged.
+UPLOADS_DIR = os.getenv(
+    "UPLOADS_DIR",
+    os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")),
+)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")

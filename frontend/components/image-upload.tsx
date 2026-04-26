@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Upload, X, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,14 @@ export function ImageUpload({
 }: ImageUploadProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Bug fix: sync preview with the value prop so that when the parent clears
+  // the value (e.g. form reset), the preview is also cleared.
+  useEffect(() => {
+    if (!value) {
+      setPreview(null);
+    }
+  }, [value]);
 
   const handleFile = useCallback(
     (file: File | null) => {

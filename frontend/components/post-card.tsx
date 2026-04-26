@@ -1,20 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Heart,
-  MessageCircle,
-  Recycle,
-  Trash2,
-  Clock,
-  ArrowRight,
-} from "lucide-react";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { Heart, MessageCircle, Recycle, Trash2, Clock, ArrowRight } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Post } from "@/lib/api";
+import { likePost, ApiError, type Post } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { toast } from "sonner";
 
 interface PostCardProps {
   post: Post;
@@ -22,43 +16,54 @@ interface PostCardProps {
 }
 
 export function PostCard({ post, showActions = true }: PostCardProps) {
-  const [isLiked, setIsLiked] = useState(false);
-  const [likes, setLikes] = useState(Math.floor(Math.random() * 50) + 5);
+  const { user } = useAuth();
+  const [likes, setLikes] = useState(post.like_count ?? 0);
+  const [isLiked, setIsLiked] = useState(user ? (post.likes ?? []).includes(user.id) : false);
+  const [isLiking, setIsLiking] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [comment, setComment] = useState("");
 
-  const initials = post.user.name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  useEffect(() => {
+    setLikes(post.like_count ?? 0);
+    setIsLiked(user ? (post.likes ?? []).includes(user.id) : false);
+  }, [post.like_count, post.likes, user]);
 
+  const initials = post.user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   const formattedDate = new Date(post.created_at).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+    month: "short", day: "numeric", year: "numeric",
   });
 
-  function handleLike() {
-    setIsLiked(!isLiked);
-    setLikes(isLiked ? likes - 1 : likes + 1);
-  }
-
-  function handleComment() {
-    if (comment.trim()) {
-      setComment("");
-      setShowCommentInput(false);
+  async function handleLike() {
+    if (!user) { toast.error("Please log in to like posts"); return; }
+    setIsLiking(true);
+    const wasLiked = isLiked;
+    setIsLiked(!wasLiked);
+    setLikes((p) => (wasLiked ? p - 1 : p + 1));
+    try {
+      const updated = await likePost(post.id);
+      setLikes(updated.like_count);
+      setIsLiked(updated.likes.includes(user.id));
+    } catch (error) {
+      setIsLiked(wasLiked);
+      setLikes((p) => (wasLiked ? p + 1 : p - 1));
+      if (error instanceof ApiError) toast.error("Failed to like post", { description: error.message });
+    } finally {
+      setIsLiking(false);
     }
   }
 
+  function handleComment() {
+    if (comment.trim()) { setComment(""); setShowCommentInput(false); }
+  }
+
   return (
-    <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-      <CardHeader className="pb-3">
+    <div className="glass-card group overflow-hidden">
+      <div className="pb-3 px-6 pt-5">
         <div className="flex items-center justify-between">
+          {/* Avatar + name */}
           <div className="flex items-center gap-3">
-            <Avatar className="h-10 w-10">
-              <AvatarFallback className="bg-primary/10 text-primary text-sm">
+            <Avatar className="h-10 w-10 ring-2 ring-transparent transition-all duration-300 group-hover:ring-primary/20">
+              <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
                 {initials}
               </AvatarFallback>
             </Avatar>
@@ -70,86 +75,70 @@ export function PostCard({ post, showActions = true }: PostCardProps) {
               </div>
             </div>
           </div>
+
+          {/* Recycled badge */}
           <Badge
             variant={post.recycled ? "default" : "secondary"}
-            className={
-              post.recycled
-                ? "bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-green-500/20"
-                : "bg-muted"
-            }
+            className={post.recycled
+              ? "bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-green-500/20 border border-green-500/20"
+              : "bg-muted border border-border"}
           >
-            {post.recycled ? (
-              <>
-                <Recycle className="h-3 w-3 mr-1" />
-                Recycled
-              </>
-            ) : (
-              <>
-                <Trash2 className="h-3 w-3 mr-1" />
-                Disposed
-              </>
-            )}
+            {post.recycled
+              ? <><Recycle className="h-3 w-3 mr-1" />Recycled</>
+              : <><Trash2 className="h-3 w-3 mr-1" />Disposed</>}
           </Badge>
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-4 pb-3">
-        {/* Before/After Images */}
+      <div className="space-y-4 pb-3 px-6">
+        {/* Before / After images */}
         <div className="grid grid-cols-2 gap-2">
-          <div className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-            <img
-              src={post.before_image}
-              alt="Before"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.currentTarget.src = "/placeholder.svg";
-              }}
-            />
-            <div className="absolute bottom-2 left-2 bg-background/90 backdrop-blur-sm text-xs px-2 py-1 rounded-md font-medium">
-              Before
+          {[
+            { src: post.before_image, label: "Before", labelCls: "bg-background/90 text-foreground" },
+            { src: post.after_image,  label: "After",  labelCls: "bg-primary/90 text-primary-foreground" },
+          ].map(({ src, label, labelCls }) => (
+            <div key={label}
+              className="relative aspect-square rounded-xl overflow-hidden bg-muted
+                         transition-transform duration-300 group-hover:scale-[1.01]">
+              <img
+                src={src} alt={label}
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                onError={(e) => { e.currentTarget.src = "/placeholder.svg"; }}
+              />
+              <div className={`absolute bottom-2 left-2 ${labelCls} backdrop-blur-sm
+                               text-xs px-2 py-0.5 rounded-md font-medium shadow-sm`}>
+                {label}
+              </div>
             </div>
-          </div>
-          <div className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-            <img
-              src={post.after_image}
-              alt="After"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.currentTarget.src = "/placeholder.svg";
-              }}
-            />
-            <div className="absolute bottom-2 left-2 bg-primary/90 backdrop-blur-sm text-primary-foreground text-xs px-2 py-1 rounded-md font-medium">
-              After
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Waste Type */}
-        <div className="flex items-center gap-2">
-          <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+        {/* Waste type */}
+        <div className="flex items-center gap-2 px-1">
+          <ArrowRight className="h-4 w-4 text-primary shrink-0 transition-transform duration-300 group-hover:translate-x-0.5" />
           <span className="text-sm">
-            <span className="text-muted-foreground">Waste type:</span>{" "}
-            <span className="font-medium capitalize">{post.waste_type}</span>
+            <span className="text-muted-foreground">Waste type: </span>
+            <span className="font-semibold capitalize">{post.waste_type}</span>
           </span>
         </div>
-      </CardContent>
+      </div>
 
       {showActions && (
-        <CardFooter className="flex flex-col gap-3 pt-0">
-          <div className="flex items-center gap-4 w-full">
+        <div className="flex flex-col gap-3 pt-0 border-t border-white/10 dark:border-white/5 mt-1 px-6 pb-4">
+          <div className="flex items-center gap-2 w-full pt-2">
             <Button
-              variant="ghost"
-              size="sm"
-              className={`gap-2 ${isLiked ? "text-red-500" : ""}`}
+              variant="ghost" size="sm"
+              className={`gap-2 rounded-lg transition-all duration-200
+                ${isLiked ? "text-red-500 bg-red-500/10 hover:bg-red-500/20" : "hover:bg-muted"}`}
               onClick={handleLike}
+              disabled={isLiking}
             >
-              <Heart className={`h-4 w-4 ${isLiked ? "fill-current" : ""}`} />
-              <span>{likes}</span>
+              <Heart className={`h-4 w-4 transition-transform duration-200 ${isLiked ? "fill-current scale-110" : ""}`} />
+              <span className="font-medium">{likes}</span>
             </Button>
             <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2"
+              variant="ghost" size="sm"
+              className="gap-2 rounded-lg hover:bg-muted transition-all duration-200"
               onClick={() => setShowCommentInput(!showCommentInput)}
             >
               <MessageCircle className="h-4 w-4" />
@@ -163,15 +152,14 @@ export function PostCard({ post, showActions = true }: PostCardProps) {
                 placeholder="Write a comment..."
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                className="flex-1"
+                className="flex-1 rounded-lg"
+                onKeyDown={(e) => e.key === "Enter" && handleComment()}
               />
-              <Button size="sm" onClick={handleComment}>
-                Post
-              </Button>
+              <Button size="sm" onClick={handleComment} className="rounded-lg">Post</Button>
             </div>
           )}
-        </CardFooter>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }

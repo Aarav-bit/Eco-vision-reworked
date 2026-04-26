@@ -14,6 +14,10 @@ import {
   Moon,
   Sun,
   ChevronRight,
+  BookOpen,
+  Trophy,
+  History,
+  UserCircle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,31 +46,15 @@ import { useAuth } from "@/lib/auth-context";
 import { useTheme } from "next-themes";
 
 const userNavItems = [
-  {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "AI Predict",
-    url: "/dashboard/predict",
-    icon: Brain,
-  },
-  {
-    title: "Create Post",
-    url: "/dashboard/create-post",
-    icon: PlusCircle,
-  },
-  {
-    title: "Explore",
-    url: "/dashboard/explore",
-    icon: Compass,
-  },
-  {
-    title: "My Stats",
-    url: "/dashboard/stats",
-    icon: BarChart3,
-  },
+  { title: "Dashboard",    url: "/dashboard",              icon: LayoutDashboard },
+  { title: "AI Predict",   url: "/dashboard/predict",      icon: Brain },
+  { title: "Create Post",  url: "/dashboard/create-post",  icon: PlusCircle },
+  { title: "Explore",      url: "/dashboard/explore",      icon: Compass },
+  { title: "My Posts",     url: "/dashboard/my-posts",     icon: BookOpen },
+  { title: "History",      url: "/dashboard/history",      icon: History },
+  { title: "Leaderboard",  url: "/dashboard/leaderboard",  icon: Trophy },
+  { title: "My Stats",     url: "/dashboard/stats",        icon: BarChart3 },
+  { title: "Profile",      url: "/dashboard/profile",      icon: UserCircle },
 ];
 
 const adminNavItems = [

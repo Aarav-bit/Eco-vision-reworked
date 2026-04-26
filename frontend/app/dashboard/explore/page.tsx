@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Compass, Loader2, RefreshCw } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
+import { Compass, Loader2, RefreshCw, Search, Filter } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PostCard } from "@/components/post-card";
 import { getPosts, ApiError, type Post } from "@/lib/api";
 import { toast } from "sonner";
@@ -13,36 +21,32 @@ export default function ExplorePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterRecycled, setFilterRecycled] = useState<"all" | "recycled" | "disposed">("all");
 
   async function fetchPosts(showRefreshToast = false) {
     try {
       const data = await getPosts();
       setPosts(data);
-      if (showRefreshToast) {
-        toast.success("Feed refreshed!");
-      }
+      if (showRefreshToast) toast.success("Feed refreshed!");
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.status === 0) {
-          toast.error("Server not reachable", {
-            description: "Please check your connection and try again.",
-          });
+          toast.error("Server not reachable", { description: "Please check your connection." });
         } else {
-          toast.error("Failed to load posts", {
-            description: error.message,
-          });
+          toast.error("Failed to load posts", { description: error.message });
         }
       }
     }
   }
 
   useEffect(() => {
-    async function loadPosts() {
+    async function load() {
       setIsLoading(true);
       await fetchPosts();
       setIsLoading(false);
     }
-    loadPosts();
+    load();
   }, []);
 
   async function handleRefresh() {
@@ -50,6 +54,21 @@ export default function ExplorePage() {
     await fetchPosts(true);
     setIsRefreshing(false);
   }
+
+  // Client-side search + filter
+  const filtered = useMemo(() => {
+    return posts.filter((p) => {
+      const matchesSearch =
+        search.trim() === "" ||
+        p.waste_type.toLowerCase().includes(search.toLowerCase()) ||
+        p.user.name.toLowerCase().includes(search.toLowerCase());
+      const matchesFilter =
+        filterRecycled === "all" ||
+        (filterRecycled === "recycled" && p.recycled) ||
+        (filterRecycled === "disposed" && !p.recycled);
+      return matchesSearch && matchesFilter;
+    });
+  }, [posts, search, filterRecycled]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -61,22 +80,37 @@ export default function ExplorePage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold">Explore Feed</h1>
-            <p className="text-muted-foreground">
-              Discover recycling posts from the community
-            </p>
+            <p className="text-muted-foreground">Discover recycling posts from the community</p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-        >
-          <RefreshCw
-            className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`}
-          />
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
           Refresh
         </Button>
+      </div>
+
+      {/* Search & Filter */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by waste type or user..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={filterRecycled} onValueChange={(v) => setFilterRecycled(v as typeof filterRecycled)}>
+          <SelectTrigger className="w-36">
+            <Filter className="h-4 w-4 mr-2" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Posts</SelectItem>
+            <SelectItem value="recycled">Recycled</SelectItem>
+            <SelectItem value="disposed">Disposed</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Posts */}
@@ -101,31 +135,34 @@ export default function ExplorePage() {
             </Card>
           ))}
         </div>
-      ) : posts.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
               <Compass className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">No posts yet</h3>
+            <h3 className="text-lg font-semibold mb-2">
+              {posts.length === 0 ? "No posts yet" : "No results found"}
+            </h3>
             <p className="text-muted-foreground text-center max-w-sm">
-              Be the first to share your recycling journey with the community!
+              {posts.length === 0
+                ? "Be the first to share your recycling journey!"
+                : "Try adjusting your search or filter."}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
-          {posts.map((post) => (
+          {filtered.map((post) => (
             <PostCard key={post.id} post={post} />
           ))}
         </div>
       )}
 
-      {/* Load More Indicator */}
-      {posts.length > 0 && (
+      {filtered.length > 0 && (
         <div className="text-center py-4">
           <p className="text-sm text-muted-foreground">
-            You&apos;ve reached the end of the feed
+            Showing {filtered.length} of {posts.length} posts
           </p>
         </div>
       )}

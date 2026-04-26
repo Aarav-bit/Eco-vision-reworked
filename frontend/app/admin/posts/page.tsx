@@ -145,7 +145,9 @@ export default function AdminPostsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (
-            <Card key={post.id} className="overflow-hidden">
+            <Card key={post.id}
+              className="group overflow-hidden border transition-all duration-300
+                         hover:-translate-y-1 hover:shadow-xl hover:border-primary/20">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -155,103 +157,58 @@ export default function AdminPostsPage() {
                       {new Date(post.created_at).toLocaleDateString()}
                     </CardDescription>
                   </div>
-                  <Badge
-                    variant={post.recycled ? "default" : "secondary"}
-                    className={
-                      post.recycled
-                        ? "bg-green-500/10 text-green-700 dark:text-green-400"
-                        : ""
-                    }
-                  >
-                    {post.recycled ? (
-                      <>
-                        <Recycle className="h-3 w-3 mr-1" />
-                        Recycled
-                      </>
-                    ) : (
-                      "Disposed"
-                    )}
+                  <Badge variant={post.recycled ? "default" : "secondary"}
+                    className={post.recycled
+                      ? "bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20"
+                      : "border border-border"}>
+                    {post.recycled ? <><Recycle className="h-3 w-3 mr-1" />Recycled</> : "Disposed"}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Images */}
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-                    <img
-                      src={post.before_image}
-                      alt="Before"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = "/placeholder.svg";
-                      }}
-                    />
-                    <div className="absolute bottom-1 left-1 bg-background/90 text-[10px] px-1.5 py-0.5 rounded">
-                      Before
+                  {[
+                    { src: post.before_image, label: "Before", cls: "bg-background/90 text-foreground" },
+                    { src: post.after_image,  label: "After",  cls: "bg-primary/90 text-primary-foreground" },
+                  ].map(({ src, label, cls }) => (
+                    <div key={label} className="relative aspect-square rounded-xl overflow-hidden bg-muted
+                                                transition-transform duration-300 group-hover:scale-[1.01]">
+                      <img src={src} alt={label}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        onError={(e) => { e.currentTarget.src = "/placeholder.svg"; }} />
+                      <div className={`absolute bottom-1 left-1 ${cls} backdrop-blur-sm text-[10px] px-1.5 py-0.5 rounded font-medium`}>
+                        {label}
+                      </div>
                     </div>
-                  </div>
-                  <div className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-                    <img
-                      src={post.after_image}
-                      alt="After"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = "/placeholder.svg";
-                      }}
-                    />
-                    <div className="absolute bottom-1 left-1 bg-primary/90 text-primary-foreground text-[10px] px-1.5 py-0.5 rounded">
-                      After
-                    </div>
-                  </div>
+                  ))}
                 </div>
-
                 <p className="text-sm">
-                  <span className="text-muted-foreground">Type:</span>{" "}
-                  <span className="font-medium capitalize">
-                    {post.waste_type}
-                  </span>
+                  <span className="text-muted-foreground">Type: </span>
+                  <span className="font-medium capitalize">{post.waste_type}</span>
                 </p>
-
-                {/* Delete Button */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="w-full"
-                      disabled={deletingId === post.id}
-                    >
-                      {deletingId === post.id ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Deleting...
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete Post
-                        </>
-                      )}
+                    <Button variant="destructive" size="sm" className="w-full transition-all duration-200 hover:shadow-md hover:shadow-destructive/20"
+                      disabled={deletingId === post.id}>
+                      {deletingId === post.id
+                        ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</>
+                        : <><Trash2 className="h-4 w-4 mr-2" />Delete Post</>}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle className="flex items-center gap-2">
-                        <AlertTriangle className="h-5 w-5 text-destructive" />
-                        Delete Post
+                        <AlertTriangle className="h-5 w-5 text-destructive" />Delete Post
                       </AlertDialogTitle>
                       <AlertDialogDescription>
                         Are you sure you want to delete this post by{" "}
-                        <span className="font-medium">{post.user.name}</span>?
-                        This action cannot be undone.
+                        <span className="font-medium">{post.user.name}</span>? This action cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => handleDelete(post.id)}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
+                      <AlertDialogAction onClick={() => handleDelete(post.id)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                         Delete
                       </AlertDialogAction>
                     </AlertDialogFooter>

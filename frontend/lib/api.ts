@@ -1,4 +1,5 @@
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT_MS = 10000;
@@ -96,8 +97,8 @@ export async function signup(data: {
       body: JSON.stringify({ ...data, is_admin: data.is_admin ?? false }),
       signal: createTimeoutSignal(),
     });
-    // Backend returns AuthResponse: { access_token, token_type, user_id, email, is_admin }
-    return handleResponse<{ access_token: string; token_type: string; user_id: string; email: string; is_admin: boolean }>(response);
+    // Backend returns AuthResponse: { access_token, token_type, user_id, name, email, is_admin }
+    return handleResponse<{ access_token: string; token_type: string; user_id: string; name: string; email: string; is_admin: boolean }>(response);
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -121,12 +122,13 @@ export async function login(data: { email: string; password: string }) {
       body: JSON.stringify(data),
       signal: createTimeoutSignal(),
     });
-    // Backend returns: { access_token, token_type, user_id, email, is_admin }
+    // Backend returns: { access_token, token_type, user_id, name, email, is_admin }
     // Frontend expects: { access_token, user: { id, name, email, is_admin } }
     const raw = await handleResponse<{
       access_token: string;
       token_type: string;
       user_id: string;
+      name: string;
       email: string;
       is_admin: boolean;
     }>(response);
@@ -136,7 +138,8 @@ export async function login(data: { email: string; password: string }) {
       access_token: raw.access_token,
       user: {
         id: raw.user_id,
-        name: raw.email.split("@")[0], // Backend doesn't return name in login response; derive from email
+        // Bug fix: use the actual name from the backend instead of deriving it from email
+        name: raw.name || raw.email.split("@")[0],
         email: raw.email,
         is_admin: raw.is_admin,
       } as User,
@@ -209,7 +212,8 @@ export async function createPost(data: {
       body: formData,
       signal: createTimeoutSignal(15000), // longer timeout for file upload
     });
-    return handleResponse<{ message: string; post_id: string }>(response);
+    // Bug fix: backend returns a full PostResponse object, not { message, post_id }
+    return handleResponse<PostResponse>(response);
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -238,16 +242,25 @@ export async function getPosts() {
       waste_type: string;
       recycled: boolean;
       timestamp: string;
+      likes: string[];
+      like_count: number;
     }>>(response);
 
     // Map backend response to frontend Post shape
     return raw.map((post): Post => ({
       id: post.id,
-      before_image: post.before_image_path,
-      after_image: post.after_image_path,
+      // Bug fix: prepend API base URL so relative /uploads/... paths resolve correctly
+      before_image: post.before_image_path.startsWith("http")
+        ? post.before_image_path
+        : `${API_BASE_URL}${post.before_image_path}`,
+      after_image: post.after_image_path.startsWith("http")
+        ? post.after_image_path
+        : `${API_BASE_URL}${post.after_image_path}`,
       waste_type: post.waste_type,
       recycled: post.recycled,
       created_at: post.timestamp,
+      likes: post.likes ?? [],
+      like_count: post.like_count ?? 0,
       user: {
         id: post.user_id,
         name: `User ${post.user_id.slice(-4)}`,
@@ -408,6 +421,234 @@ export async function deletePost(postId: string) {
 }
 
 // ──────────────────────────────────────────────
+// My Posts API
+// ──────────────────────────────────────────────
+
+export async function getMyPosts(): Promise<Post[]> {
+  const endpoint = "/posts/mine";
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      headers: getAuthHeaders(),
+      signal: createTimeoutSignal(),
+    });
+    const raw = await handleResponse<Array<{
+      id: string;
+      user_id: string;
+      before_image_path: string;
+      after_image_path: string;
+      waste_type: string;
+      recycled: boolean;
+      timestamp: string;
+      likes: string[];
+      like_count: number;
+    }>>(response);
+
+    return raw.map((post): Post => ({
+      id: post.id,
+      before_image: post.before_image_path.startsWith("http")
+        ? post.before_image_path
+        : `${API_BASE_URL}${post.before_image_path}`,
+      after_image: post.after_image_path.startsWith("http")
+        ? post.after_image_path
+        : `${API_BASE_URL}${post.after_image_path}`,
+      waste_type: post.waste_type,
+      recycled: post.recycled,
+      created_at: post.timestamp,
+      likes: post.likes ?? [],
+      like_count: post.like_count ?? 0,
+      user: { id: post.user_id, name: "Me", email: "" },
+    }));
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Server timeout — please try again", 0);
+    }
+    throw new ApiError("Server not reachable", 0);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Like / Unlike Post API
+// ──────────────────────────────────────────────
+
+export async function likePost(postId: string): Promise<Post> {
+  const endpoint = `/posts/${postId}/like`;
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      signal: createTimeoutSignal(),
+    });
+    const raw = await handleResponse<{
+      id: string;
+      user_id: string;
+      before_image_path: string;
+      after_image_path: string;
+      waste_type: string;
+      recycled: boolean;
+      timestamp: string;
+      likes: string[];
+      like_count: number;
+    }>(response);
+
+    return {
+      id: raw.id,
+      before_image: raw.before_image_path.startsWith("http")
+        ? raw.before_image_path
+        : `${API_BASE_URL}${raw.before_image_path}`,
+      after_image: raw.after_image_path.startsWith("http")
+        ? raw.after_image_path
+        : `${API_BASE_URL}${raw.after_image_path}`,
+      waste_type: raw.waste_type,
+      recycled: raw.recycled,
+      created_at: raw.timestamp,
+      likes: raw.likes ?? [],
+      like_count: raw.like_count ?? 0,
+      user: { id: raw.user_id, name: `User ${raw.user_id.slice(-4)}`, email: "" },
+    };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Server timeout — please try again", 0);
+    }
+    throw new ApiError("Server not reachable", 0);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Leaderboard API
+// ──────────────────────────────────────────────
+
+export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
+  const endpoint = `/user/leaderboard?limit=${limit}`;
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      headers: getAuthHeaders(),
+      signal: createTimeoutSignal(),
+    });
+    const raw = await handleResponse<{ leaderboard: LeaderboardEntry[] }>(response);
+    return raw.leaderboard;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Server timeout — please try again", 0);
+    }
+    throw new ApiError("Server not reachable", 0);
+  }
+}
+
+// ──────────────────────────────────────────────
+// User Profile API
+// ──────────────────────────────────────────────
+
+export async function getUserProfile(): Promise<UserProfile> {
+  const endpoint = "/user/profile";
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      headers: getAuthHeaders(),
+      signal: createTimeoutSignal(),
+    });
+    return handleResponse<UserProfile>(response);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Server timeout — please try again", 0);
+    }
+    throw new ApiError("Server not reachable", 0);
+  }
+}
+
+export async function updateUserProfile(name: string): Promise<{ message: string; name: string }> {
+  const endpoint = "/user/profile";
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name }),
+      signal: createTimeoutSignal(),
+    });
+    return handleResponse<{ message: string; name: string }>(response);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Server timeout — please try again", 0);
+    }
+    throw new ApiError("Server not reachable", 0);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Delete Own Post API
+// ──────────────────────────────────────────────
+
+export async function deleteOwnPost(postId: string): Promise<{ message: string }> {
+  const endpoint = `/posts/${postId}`;
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+      signal: createTimeoutSignal(),
+    });
+    return handleResponse<{ message: string }>(response);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("Server timeout — please try again", 0);
+    }
+    throw new ApiError("Server not reachable", 0);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Prediction History (localStorage)
+// ──────────────────────────────────────────────
+
+export interface PredictionHistoryEntry {
+  id: string;
+  waste_type: string;
+  confidence: number;
+  recyclable: boolean;
+  disposal_instructions?: string;
+  timestamp: string;
+  imagePreview?: string; // base64 data URL
+}
+
+const HISTORY_KEY = "ecovision_prediction_history";
+const MAX_HISTORY = 20;
+
+export function savePredictionToHistory(
+  result: PredictionResult,
+  imagePreview?: string
+): void {
+  if (typeof window === "undefined") return;
+  const existing: PredictionHistoryEntry[] = getPredictionHistory();
+  const entry: PredictionHistoryEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    waste_type: result.waste_type,
+    confidence: result.confidence,
+    recyclable: result.recyclable,
+    disposal_instructions: result.disposal_instructions,
+    timestamp: new Date().toISOString(),
+    imagePreview,
+  };
+  const updated = [entry, ...existing].slice(0, MAX_HISTORY);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+}
+
+export function getPredictionHistory(): PredictionHistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+export function clearPredictionHistory(): void {
+  if (typeof window !== "undefined") localStorage.removeItem(HISTORY_KEY);
+}
+
+// ──────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────
 
@@ -425,6 +666,7 @@ export interface PredictionResult {
   recyclable: boolean;
   disposal_instructions?: string;
   ideas?: string[];
+  low_confidence?: boolean;   // true when model confidence < 50%
   map_location?: {
     name: string;
     address: string;
@@ -440,6 +682,8 @@ export interface Post {
   waste_type: string;
   recycled: boolean;
   created_at: string;
+  likes: string[];
+  like_count: number;
   user: {
     id: string;
     name: string;
@@ -461,6 +705,26 @@ export interface AdminActivity {
     timestamp: string;
     user: string;
   }>;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: string;
+  name: string;
+  email: string;
+  points: number;
+  co2_saved: number;
+  total_posts: number;
+}
+
+export interface UserProfile {
+  user_id: string;
+  name: string;
+  email: string;
+  points: number;
+  co2_saved: number;
+  total_posts: number;
+  is_admin: boolean;
 }
 
 // Helper for auth context

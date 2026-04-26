@@ -37,6 +37,8 @@ def signup_user(name: str, email: str, password: str, is_admin: bool = False) ->
     token_payload = {
         "sub": str(inserted.inserted_id),
         "email": email,
+        # Bug fix: Include name in JWT so login can return the real user name
+        "name": name,
         "is_admin": is_admin,
         "role": "admin" if is_admin else "user",
     }
@@ -46,6 +48,7 @@ def signup_user(name: str, email: str, password: str, is_admin: bool = False) ->
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": str(inserted.inserted_id),
+        "name": name,
         "email": email,
         "is_admin": is_admin,
     }
@@ -78,6 +81,8 @@ def login_user(email: str, password: str, admin_only: bool = False) -> dict:
     token_payload = {
         "sub": user_id,
         "email": user["email"],
+        # Bug fix: Include name in JWT payload so login returns the real user name
+        "name": user.get("name", ""),
         "is_admin": user.get("is_admin", False),
         "role": "admin" if user.get("is_admin", False) else "user",
     }
@@ -87,6 +92,7 @@ def login_user(email: str, password: str, admin_only: bool = False) -> dict:
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": user_id,
+        "name": user.get("name", ""),
         "email": user["email"],
         "is_admin": user.get("is_admin", False),
     }

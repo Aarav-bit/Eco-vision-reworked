@@ -104,6 +104,10 @@ RECYCLING_IDEAS: Dict[str, List[str]] = {
 # Model constants
 # ──────────────────────────────────────────────────────────────────────────────
 MODEL_INPUT_SIZE = (224, 224)
+# Resize to slightly larger than input, then take 5 crops for TTA
+TTA_RESIZE = (256, 256)
+# Confidence below this threshold is flagged as low-confidence
+LOW_CONFIDENCE_THRESHOLD = 0.50
 MODEL_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "models", "ml_model", "wasteClassify.keras",
@@ -186,6 +190,13 @@ def get_model() -> Any:
 # ──────────────────────────────────────────────────────────────────────────────
 # Image preprocessing
 # ──────────────────────────────────────────────────────────────────────────────
+def _crop_to_224(arr: np.ndarray, top: int, left: int) -> np.ndarray:
+    """Return a (1, 224, 224, 3) float32 crop from a (256, 256, 3) array."""
+    return np.expand_dims(
+        arr[top:top + 224, left:left + 224].astype(np.float32), axis=0
+    )
+
+
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
     """
     Convert raw image bytes → model-ready numpy array.
@@ -197,10 +208,35 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
         np.ndarray of shape (1, 224, 224, 3), dtype float32, values [0, 255].
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = img.resize(MODEL_INPUT_SIZE, Image.BILINEAR)
+    img = img.resize(MODEL_INPUT_SIZE, Image.LANCZOS)
     arr = np.array(img, dtype=np.float32)   # shape (224, 224, 3)
     arr = np.expand_dims(arr, axis=0)        # shape (1, 224, 224, 3)
     return arr
+
+
+def preprocess_image_tta(image_bytes: bytes) -> list:
+    """
+    Test-Time Augmentation: resize to 256×256 then take 5 crops
+    (center + 4 corners), each 224×224.
+
+    Averaging predictions over multiple crops reduces sensitivity to
+    object position and improves accuracy on real-world photos.
+
+    Returns:
+        List of 5 np.ndarray, each shape (1, 224, 224, 3), float32.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = img.resize(TTA_RESIZE, Image.LANCZOS)
+    arr = np.array(img, dtype=np.uint8)  # (256, 256, 3)
+
+    crops = [
+        _crop_to_224(arr, 16, 16),   # center
+        _crop_to_224(arr,  0,  0),   # top-left
+        _crop_to_224(arr,  0, 32),   # top-right
+        _crop_to_224(arr, 32,  0),   # bottom-left
+        _crop_to_224(arr, 32, 32),   # bottom-right
+    ]
+    return crops
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -210,6 +246,9 @@ def predict_waste_from_bytes(image_bytes: bytes) -> Dict[str, Any]:
     """
     Run the ML model on raw image bytes and return a structured prediction.
 
+    Uses Test-Time Augmentation (5 crops) to improve accuracy on real-world
+    photos where the object may not be perfectly centered.
+
     Returns:
         {
             "waste_type":             str,
@@ -217,14 +256,20 @@ def predict_waste_from_bytes(image_bytes: bytes) -> Dict[str, Any]:
             "recyclable":             bool,
             "disposal_instructions":  str,
             "ideas":                  list[str] | None,
+            "low_confidence":         bool,    # True if model is uncertain
         }
     """
     model = get_model()
-    arr = preprocess_image(image_bytes)
 
-    logger.info("Running model.predict() on input shape %s", arr.shape)
-    predictions = model.predict(arr, verbose=0)   # shape (1, num_classes)
-    probabilities = predictions[0]                 # shape (num_classes,)
+    # ── Test-Time Augmentation: average over 5 crops ──────────────────────
+    crops = preprocess_image_tta(image_bytes)
+    all_probs = []
+    for crop in crops:
+        preds = model.predict(crop, verbose=0)
+        all_probs.append(preds[0])
+
+    # Average probabilities across all crops
+    probabilities = np.mean(all_probs, axis=0)
 
     class_idx = int(np.argmax(probabilities))
     confidence = float(probabilities[class_idx])
@@ -235,6 +280,9 @@ def predict_waste_from_bytes(image_bytes: bytes) -> Dict[str, Any]:
     else:
         waste_type = f"class_{class_idx}"
 
+    # Flag low-confidence predictions so the frontend can warn the user
+    low_confidence = confidence < LOW_CONFIDENCE_THRESHOLD
+
     recyclable = RECYCLABLE.get(waste_type, False)
     disposal = DISPOSAL_INSTRUCTIONS.get(
         waste_type,
@@ -243,8 +291,8 @@ def predict_waste_from_bytes(image_bytes: bytes) -> Dict[str, Any]:
     ideas = RECYCLING_IDEAS.get(waste_type)
 
     logger.info(
-        "✅ Prediction: %s (confidence=%.4f, recyclable=%s)",
-        waste_type, confidence, recyclable,
+        "✅ Prediction (TTA): %s (confidence=%.4f, low_confidence=%s, recyclable=%s)",
+        waste_type, confidence, low_confidence, recyclable,
     )
 
     result: Dict[str, Any] = {
@@ -252,6 +300,7 @@ def predict_waste_from_bytes(image_bytes: bytes) -> Dict[str, Any]:
         "confidence":            round(confidence, 4),
         "recyclable":            recyclable,
         "disposal_instructions": disposal,
+        "low_confidence":        low_confidence,
     }
     if ideas:
         result["ideas"] = ideas

@@ -130,21 +130,19 @@ export default function AdminDashboardPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-3">
           {statsCards.map((stat) => (
-            <Card key={stat.title} className="relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 -translate-y-8 translate-x-8 rounded-full bg-gradient-to-br from-primary/10 to-transparent blur-2xl" />
-              <CardContent className="pt-6 relative">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.color} mb-4`}>
-                  <stat.icon className="h-6 w-6" />
-                </div>
-                <p className="text-3xl font-bold">{stat.value}</p>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {stat.title}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {stat.description}
-                </p>
-              </CardContent>
-            </Card>
+            <div key={stat.title}
+              className="glass-card group relative overflow-hidden cursor-default p-6">
+              <div className="absolute top-0 right-0 w-32 h-32 -translate-y-8 translate-x-8 rounded-full
+                              bg-gradient-to-br from-primary/10 to-transparent blur-2xl
+                              opacity-60 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.color} mb-4
+                               transition-transform duration-300 group-hover:scale-110 relative`}>
+                <stat.icon className="h-6 w-6" />
+              </div>
+              <p className="text-3xl font-bold relative">{stat.value}</p>
+              <p className="text-sm font-medium text-foreground mt-1 relative">{stat.title}</p>
+              <p className="text-xs text-muted-foreground relative">{stat.description}</p>
+            </div>
           ))}
         </div>
       )}

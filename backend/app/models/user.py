@@ -27,6 +27,8 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: str
+    # Bug fix: name was missing from AuthResponse — login was returning empty name
+    name: str = ""
     email: EmailStr
     is_admin: bool
 
