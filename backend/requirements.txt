@@ -11,8 +11,9 @@ starlette==0.41.0
 pymongo==4.8.0
 
 # ── ML / Data ─────────────────────────────────────────────────────────────
-# Use tensorflow-cpu to avoid heavy GPU deps — required on Render free tier.
-tensorflow-cpu==2.17.0
+# tensorflow-cpu is lighter than full tensorflow — no GPU deps.
+# 2.16.1 is the latest cpu-only build available on PyPI for Python 3.11.
+tensorflow-cpu==2.16.1
 pillow>=10.0.0
 numpy>=1.26.0,<2.0.0
 
