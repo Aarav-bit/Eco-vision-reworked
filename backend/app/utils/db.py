@@ -6,7 +6,7 @@ from pymongo.database import Database
 
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "ecovision")
+MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "Eco-vision")
 
 _mongo_client: Optional[MongoClient] = None
 
