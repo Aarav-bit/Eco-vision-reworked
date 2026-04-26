@@ -22,12 +22,18 @@ app = FastAPI(
 # Read allowed origins from env so the Vercel URL can be injected at deploy time.
 # Falls back to wildcard for local development.
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
-ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
+
+if _raw_origins == "*":
+    ALLOWED_ORIGINS = ["*"]
+    ALLOW_CREDENTIALS = False  # credentials not allowed with wildcard origin
+else:
+    ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",")]
+    ALLOW_CREDENTIALS = True
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
