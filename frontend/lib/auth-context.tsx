@@ -21,6 +21,13 @@ interface AuthContextType {
   logout: () => void;
 }
 
+const GUEST_USER: User = {
+  id: "guest",
+  name: "Guest",
+  email: "guest@ecovision.dev",
+  is_admin: false,
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -60,14 +67,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push("/login");
   }, [router]);
 
+  // Always authenticated — use stored user or fall back to guest
+  const effectiveUser = user ?? GUEST_USER;
+  const isAuthenticated = true;
+
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: effectiveUser,
         token,
         isLoading,
-        isAuthenticated: !!token,
-        isAdmin: user?.is_admin ?? false,
+        isAuthenticated,
+        isAdmin: effectiveUser.is_admin,
         login,
         logout,
       }}
